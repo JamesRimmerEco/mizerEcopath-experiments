@@ -64,13 +64,17 @@ Type objective_function<Type>::operator() ()
     DATA_VECTOR(l);                // lengths corresponding to w
     DATA_SCALAR(yield);            // Observed yield
     DATA_SCALAR(biomass);          // Observed biomass
-    DATA_VECTOR(EReproAndGrowth);  // The rate at which energy is available for growth
-                                   // and reproduction
+    DATA_SCALAR(production);       // Observed production
+    DATA_SCALAR(production_correction) // Used to correct for the fact that we
+                                       // are not using the full size range
     DATA_VECTOR(repro_prop);       // Proportion of energy allocated to reproduction
     DATA_SCALAR(w_mat);            // Maturity size is currently not optimised
     DATA_SCALAR(d);                // Exponent of mortality power-law
+    DATA_SCALAR(n);                // Exponent of encounter power-law
     DATA_SCALAR(yield_lambda);     // controls the strength of the penalty for
                                    // deviation from the observed yield.
+    DATA_SCALAR(production_lambda); // controls the strength of the penalty for
+                                    // deviation from the observed production.
 
     // **Parameter Section**
     PARAMETER(l50);          // Length at 50% gear selectivity
@@ -78,12 +82,16 @@ Type objective_function<Type>::operator() ()
     PARAMETER(mu_mat);       // Mortality at maturity size
     PARAMETER(U);            // Steepness parameter of maturity ogive
     PARAMETER(catchability); // Catchability
+    PARAMETER(Er);           // Coefficient of EReproAndGrowth
 
     // **Calculate fishing mortality rate**
     vector<Type> F_mort = calculate_F_mort(l50, ratio, catchability, l);
 
     // **Calculate total mortality rate**
     vector<Type> mort = mu_mat * pow(w / w_mat, d) + F_mort;
+
+    // **Calculate energy allocated to reproduction and growth**
+    vector<Type> EReproAndGrowth = Er * pow(w, n);
 
     // **Calculate growth rate**
     vector<Type> growth = calculate_growth(EReproAndGrowth, repro_prop,
@@ -92,7 +100,7 @@ Type objective_function<Type>::operator() ()
     // **Calculate steady-state number density**
     vector<Type> N = calculate_N(mort, growth, biomass, w, dw);
 
-    // Rescale to get observed biomass
+    // Rescale to agree with observed biomass
     vector<Type> biomass_in_bins = N * w * dw;
     N = N * biomass / biomass_in_bins.sum();
 
@@ -102,6 +110,10 @@ Type objective_function<Type>::operator() ()
     // **Calculate model yield**
     vector<Type> yield_per_bin = catch_dens * w * dw;
     Type model_yield = yield_per_bin.sum();
+
+    // **Calculate model production**
+    vector<Type> production_per_bin = N * growth * dw;
+    Type model_production = production_per_bin.sum() + Er * production_correction;
 
     // **Calculate catch probabilities**
     int num_bins = counts.size();    // Number of bins
@@ -130,12 +142,16 @@ Type objective_function<Type>::operator() ()
     // **Add penalty for deviation from observed yield**
     nll += yield_lambda * pow(log(model_yield / yield), Type(2));
 
+    // **Add penalty for deviation from observed production**
+    nll += production_lambda * pow(log(model_production / production), Type(2));
+
     TMBAD_ASSERT(nll >= 0);
     TMBAD_ASSERT(CppAD::isfinite(nll));
     if (!CppAD::isfinite(nll)) error("nll is not finite");
 
     REPORT(probs);
     REPORT(model_yield);
+    REPORT(model_production)
     REPORT(N);
     REPORT(F_mort);
     REPORT(mort);

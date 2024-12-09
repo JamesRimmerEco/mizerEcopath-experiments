@@ -17,10 +17,13 @@
 #'   * `count`: The observed count for each bin.
 #' @param yield_lambda A parameter that controls the strength of the penalty for
 #'   deviation from the observed yield.
+#' @param production_lambda A parameter that controls the strength of the penalty
+#'  for deviation from the observed production.
 #'
 #' @return The objective function
 #' @export
-prepare_data <- function(params, species = 1, catch, yield_lambda = 1) {
+prepare_data <- function(params, species = 1, catch,
+                         yield_lambda = 1, production_lambda = 1) {
 
     # Validate MizerParams object and extract data for the selected species ----
     params <- validParams(params)
@@ -92,14 +95,25 @@ prepare_data <- function(params, species = 1, catch, yield_lambda = 1) {
     w_min <- max(w[w <= min(w_bin_boundaries)])
     w_max <- min(w[w >= max(w_bin_boundaries)])
     w_select <- w >= w_min & w <= w_max
-    w <- w[w >= w_min & w <= w_max]
+    w <- w[w_select]
     dw <- dw(params)[w_select]
     l <- (w / sps$a) ^ (1 / sps$b)
 
     N <- initialN(params)[sp_select, w_select]
     biomass <- sum(N * w * dw)
 
-    EReproAndGrowth <- getEReproAndGrowth(params)[sp_select, w_select]
+    # Because in the C++ code we can only calculate the production from the
+    # selected size range, we need to calculate the production from the non-
+    # selected size range here.
+    N_non_select <- initialN(params)[sp_select, !w_select]
+    w_non_select <- w(params)[!w_select]
+    dw_non_select <- dw(params)[!w_select]
+    production_correction <-
+        sum(N_non_select * w_non_select^sps$n * dw_non_select)
+    # Now the production from the non-selected range is
+    # production_correction * Er
+    # where Er is the coefficient of the EReproAndGrowth power law.
+
     repro_prop <- getReproductionProportion(params)[sp_select, w_select]
     # Work around bug #299
     # TODO: remove this once this package depends on mizer version > 2.5.3.9000
@@ -124,11 +138,14 @@ prepare_data <- function(params, species = 1, catch, yield_lambda = 1) {
         l = l,
         yield = gps$yield_observed,
         biomass = biomass,
-        EReproAndGrowth = EReproAndGrowth,
+        production = sps$ecopath_production,
+        production_correction = production_correction,
         repro_prop = repro_prop,
         w_mat = w_mat,
         d = sps$d,
-        yield_lambda = yield_lambda
+        n = sps$n,
+        yield_lambda = yield_lambda,
+        production_lambda = production_lambda
     )
     return(data)
 }

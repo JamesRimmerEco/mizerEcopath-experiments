@@ -57,6 +57,17 @@ update_params <- function(params, species = 1, pars, biomass, w_select) {
     # Update the steepness of the maturity ogive
     sps$w_mat25 <- sps$w_mat / 3^(1 / pars["U"])
 
+    # Set EReproAndGrowth
+    # First make sure there is no satiation and no respiration
+    sps$h <- Inf
+    intake_max(params)[sp_select, ] <- Inf
+    sps$ks <- 0
+    sps$k <- 0
+    metab(params)[sp_select, ] <- 0
+    # Then set the external encounter rate
+    ext_encounter(params)[sp_select, ] <-
+        (pars["Er"] / sps$alpha) * params@w ^ sps$n
+
     params@species_params[sp_select, ] <- sps
     params <- setReproduction(params)
 

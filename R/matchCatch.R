@@ -19,22 +19,27 @@
 #'   * `count`: The observed count for each bin.
 #' @param yield_lambda A parameter that controls the strength of the penalty for
 #'   deviation from the observed yield.
+#' @param production_lambda A parameter that controls the strength of the penalty
+#'  for deviation from the observed production.
 #' @return A MizerParams object with the adjusted gear selectivity and
 #'   catchability for the selected species
 #' @family match functions
 #' @export
-matchCatch <- function(params, species = NULL, catch, yield_lambda = 1) {
+matchCatch <- function(params, species = NULL, catch,
+                       yield_lambda = 1, production_lambda = 1) {
     species <- valid_species_arg(params, species = species)
     if (length(species) > 1) {
         for (s in species) {
             params <- matchCatch(params, species = s, catch = catch,
-                                 yield_lambda = yield_lambda)
+                                 yield_lambda = yield_lambda,
+                                 production_lambda = production_lambda)
         }
         return(params)
     }
 
     data <- prepare_data(params, species = species, catch,
-                         yield_lambda = yield_lambda)
+                         yield_lambda = yield_lambda,
+                         production_lambda = production_lambda)
 
     sp <- species_params(params)
     gp <- gear_params(params)
@@ -53,11 +58,15 @@ matchCatch <- function(params, species = NULL, catch, yield_lambda = 1) {
     # Steepness of maturity ogive
     U <- log(3) / log(sps$w_mat / sps$w_mat25)
 
+    # Coefficient of EReproAndGrowth power law
+    Er <- getEReproAndGrowth(params)[sp_select, 1] / params@w[1]^sps$n
+
     # Initial parameter estimates
     initial_params <- c(l50 = gps$l50, ratio = gps$l25 / gps$l50,
                         mu_mat = mu_mat, U = U,
                         # we need non-zero catchability to match catch
-                        catchability = max(gps$catchability, 1e-8))
+                        catchability = max(gps$catchability, 1e-8),
+                        Er = Er)
 
     # Prepare the objective function.
     obj <- MakeADFun(data = data,
@@ -67,9 +76,9 @@ matchCatch <- function(params, species = NULL, catch, yield_lambda = 1) {
 
     # Set parameter bounds
     lower_bounds <- c(l50 = 5, ratio = 0.1, mu_mat = 0, U = 1,
-                      catchability = 1e-8)
+                      catchability = 0.001, Er = 0.001)
     upper_bounds <- c(l50 = Inf, ratio = 0.99, mu_mat = Inf, U = 20,
-                      catchability = Inf)
+                      catchability = Inf, Er = Inf)
 
     # Perform the optimization.
     optim_result <- nlminb(obj$par, obj$fn, obj$gr,

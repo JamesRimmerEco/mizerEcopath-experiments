@@ -6,6 +6,7 @@
 
 library(mizerEcopath)
 library(TMB)
+
 params <- celtic_params
 sp <- species_params(params)
 gp <- gear_params(params)
@@ -14,12 +15,11 @@ catch <- celtic_catch
 params <- matchGrowth(params, keep = "biomass")
 params <- matchCatch(params, catch = catch)
 
-species <- valid_species_arg(params, 5)
+species <- valid_species_arg(params, 2)
 
 # Model does not fit the observed catch yet:
 plot_catch(params, species, catch)
 
-data <- prepare_data(params, species = species, catch)
 species <- valid_species_arg(params, species = species)
 sp <- species_params(params)
 gp <- gear_params(params)
@@ -38,10 +38,18 @@ if (!"mu_mat" %in% names(sps) || is.na(sps$mu_mat)) {
 # Steepness of maturity ogive
 U <- log(3) / log(sps$w_mat / sps$w_mat25)
 
+# Coefficient of EReproAndGrowth power law
+Er <- getEReproAndGrowth(params)[sp_select, 1] / params@w[1]^sps$n
+
 # Initial parameter estimates
 initial_params <- c(l50 = gps$l50, ratio = gps$l25 / gps$l50,
                     mu_mat = mu_mat, U = U,
-                    catchability = gps$catchability)
+                    # we need non-zero catchability to match catch
+                    catchability = max(gps$catchability, 1e-8),
+                    Er = Er)
+
+data <- prepare_data(params, species = species, catch,
+                     yield_lambda = 1, production_lambda = 1)
 
 # Prepare the objective function.
 obj <- MakeADFun(data = data,
@@ -50,10 +58,10 @@ obj <- MakeADFun(data = data,
                  silent = TRUE)
 
 # Set parameter bounds
-lower_bounds <- c(l50 = 5, ratio = 0.1, mu_mat = 0.2, U = 1,
-                  catchability = 0.001)
+lower_bounds <- c(l50 = 5, ratio = 0.1, mu_mat = 0, U = 1,
+                  catchability = 0.001, Er = 0.001)
 upper_bounds <- c(l50 = Inf, ratio = 0.99, mu_mat = Inf, U = 20,
-                  catchability = Inf)
+                  catchability = Inf, Er = Inf)
 
 # Perform the optimization.
 optim_result <- nlminb(obj$par, obj$fn, obj$gr,
@@ -67,7 +75,7 @@ optimal_params <- update_params(params, species, optim_result$par,
 
 
 plot_catch(optimal_params, species, catch)
-
+optim_result$par
 report <- obj$report()
 
 # Also the yield is approximately matched:
@@ -75,6 +83,10 @@ gps$yield_observed
 report$model_yield
 getYield(optimal_params)[sp_select]
 # If you want a better match you can increase the `yield_lambda` parameter
+
+sps$ecopath_production
+report$model_production
+getProduction(optimal_params)[sp_select]
 
 # Check that TMB code and mizer agree on size distribution
 plot(data$w, report$N, type = "l", log = "y")
