@@ -13,6 +13,7 @@ reference:
   - makeInteracting
   - makeNoninteracting
   - setFeedingLevel
+  - fillDefaultsFromFishBase
 - title: "Calibrating model"
   desc: >
     Tools to match model output to empirical observations.
@@ -32,6 +33,7 @@ reference:
   - reduceEcopathDiet
   - validEcopathParams
   - validEcopathCatch
+  - valid_catch
 - title: "Shiny gadget"
   desc: >
     Interactive interface for tuning mizer model parameters.
